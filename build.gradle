@@ -1,0 +1,24 @@
+plugins {
+    id 'java'
+}
+
+group = 'org.saga_quarkus'
+version = '1.0.0-SNAPSHOT'
+
+allprojects {
+    apply plugin: 'java'
+
+    repositories {
+        mavenCentral()
+        mavenLocal()
+    }
+
+    java {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+task parallelBuild {
+    dependsOn subprojects.collect { it.tasks.getByName('build') }
+}
