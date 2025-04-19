@@ -24,103 +24,83 @@ public class PaymentProcessor {
     @Inject
     DebeziumEventDeserializer deserializer;
 
-    @Incoming("order-events") // Matches channel name in application.properties
-    @Blocking // Use a worker thread for DB operations and potential external calls
-    @Transactional
+    @Incoming("order-events")
+    @Blocking
     public void consumeOrderEvent(String payload) {
         log.debug("Received raw order event: {}", payload);
+        if (payload == null || payload.isEmpty()) {
+            log.warn("Payload is null or empty!");
+            return;
+        }
         Optional<Order> orderOpt = deserializer.deserialize(payload, Order.class);
 
         if (orderOpt.isEmpty()) {
             log.warn("Could not deserialize order event or 'after' is null. Payload: {}", payload);
-            return; // Ignore delete events or malformed messages
+            return;
         }
 
         Order order = orderOpt.get();
         log.info("Processing order event for orderId: {}, status: {}", order.id, order.status);
 
-        // --- Payment Logic based on Order Status ---
         switch (order.status) {
             case Order.STATUS_PENDING:
-                // New order received, attempt to process payment
-                processPayment(order);
+                // Simula pagamento FUORI dalla transazione
+                boolean paymentSuccess = simulatePaymentGateway();
+                processPayment(order, paymentSuccess);
                 break;
             case Order.STATUS_COMPENSATING_PAYMENT:
-                // Stock reservation failed, need to compensate (cancel/refund) payment
+                // Compensazione pagamento FUORI dalla transazione
                 compensatePayment(order);
                 break;
-            // Ignore other statuses like AWAITING_STOCK, COMPLETED, FAILED as payment is already handled or irrelevant
             default:
                 log.debug("Ignoring order event for orderId: {} with status: {}", order.id, order.status);
                 break;
         }
     }
 
-    private void processPayment(Order order) {
-        // Check if payment already exists for this order to ensure idempotency
+    @Transactional
+    void processPayment(Order order, boolean paymentSuccess) {
         if (Payment.count("orderId", order.id) > 0) {
             log.warn("Payment record already exists for orderId: {}. Skipping processing.", order.id);
             return;
         }
-
-        log.info("Attempting payment processing for orderId: {}", order.id);
-
-        // Simulate payment gateway interaction (replace with actual logic)
-        boolean paymentSuccess = simulatePaymentGateway();
         String paymentStatus = paymentSuccess ? Payment.STATUS_COMPLETED : Payment.STATUS_FAILED;
-
-        // Simulate calculating amount (replace with actual logic if needed)
-        BigDecimal amount = BigDecimal.valueOf(order.quantity * 10.0); // Example: price is 10.0 per item
-
+        BigDecimal amount = BigDecimal.valueOf(order.quantity * 10.0);
         Payment payment = Payment.builder()
                 .orderId(order.id)
                 .amount(amount)
                 .status(paymentStatus)
                 .build();
-
         try {
             payment.persist();
             log.info("Payment record created for orderId: {} with status: {}", order.id, paymentStatus);
         } catch (Exception e) {
             log.error("Failed to persist payment record for orderId: {}", order.id, e);
-            // Consider retry or other error handling
         }
     }
 
-    private void compensatePayment(Order order) {
-        // Find the original payment record(s) for the order
-        // Assuming only one payment record per order for simplicity
+    void compensatePayment(Order order) {
         Payment existingPayment = Payment.find("orderId", order.id).firstResult();
-
         if (existingPayment == null) {
             log.warn("Compensation requested for orderId: {}, but no existing payment found. Ignoring.", order.id);
-            return; // Nothing to compensate
+            return;
         }
-
-        // Check if compensation already happened or payment already failed
         if (Payment.STATUS_CANCELLED.equals(existingPayment.status) || Payment.STATUS_FAILED.equals(existingPayment.status)) {
             log.warn("Compensation requested for orderId: {}, but payment status is already '{}'. Ignoring.", order.id, existingPayment.status);
             return;
         }
-
         log.info("Attempting payment compensation (cancellation/refund) for orderId: {}", order.id);
-
-        // Simulate refund/cancellation logic
-        boolean compensationSuccess = simulateRefundGateway(); // Usually should succeed unless technical issues
-
+        boolean compensationSuccess = simulateRefundGateway();
         if (compensationSuccess) {
             existingPayment.status = Payment.STATUS_CANCELLED;
             try {
-                existingPayment.persist(); // Update the existing payment record
+                existingPayment.persist();
                 log.info("Payment compensation successful for orderId: {}. Status updated to CANCELLED.", order.id);
             } catch (Exception e) {
                 log.error("Failed to update payment status to CANCELLED for orderId: {}", order.id, e);
-                // Critical error - needs monitoring/manual intervention
             }
         } else {
             log.error("Payment compensation FAILED for orderId: {}. Manual intervention required!", order.id);
-            // This is a critical state - the system couldn't automatically compensate.
-            // Mark the payment or order in a specific error state if possible, or rely on monitoring.
         }
     }
 

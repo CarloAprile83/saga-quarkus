@@ -1,5 +1,8 @@
 # saga-quarkus
 
+Per far partire, lanciare .\start_services.bat
+Poi attach debug , Debug All Saga Services
+
 This project uses Quarkus, the Supersonic Subatomic Java Framework.
 
 If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.

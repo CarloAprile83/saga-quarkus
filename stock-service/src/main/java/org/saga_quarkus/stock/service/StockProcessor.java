@@ -25,9 +25,15 @@ public class StockProcessor {
 
     @Incoming("order-events") // Matches channel name in application.properties
     @Blocking // Use a worker thread for DB operations and potential external calls
-    @Transactional
     public void consumeOrderEvent(String payload) {
         log.debug("Received raw order event: {}", payload);
+        log.debug("Payload before deserialization: {}", payload); // Add this line
+        if (payload == null || payload.isEmpty()) {
+            log.warn("Payload is null or empty!");
+        }
+        else {
+            log.info("Payload before deserialization: {}", payload);
+        }
         Optional<Order> orderOpt = deserializer.deserialize(payload, Order.class);
 
         if (orderOpt.isEmpty()) {
@@ -40,24 +46,23 @@ public class StockProcessor {
         // Only process orders that are awaiting stock reservation
         if (Order.STATUS_AWAITING_STOCK.equals(order.status)) {
             log.info("Processing order event for stock reservation: orderId={}, status={}", order.id, order.status);
-            reserveStock(order);
+
+            // Simulate logic OUTSIDE the transaction
+            boolean stockAvailable = simulateStockCheck(order.productId, order.quantity);
+            reserveStock(order, stockAvailable);
         } else {
             log.debug("Ignoring order event for orderId: {} with status: {} (not AWAITING_STOCK)", order.id, order.status);
         }
     }
 
-    private void reserveStock(Order order) {
+    @Transactional
+    void reserveStock(Order order, boolean stockAvailable) {
         // Check if stock reservation already exists for this order to ensure idempotency
         if (StockReservation.count("orderId", order.id) > 0) {
             log.warn("Stock reservation record already exists for orderId: {}. Skipping processing.", order.id);
             return;
         }
 
-        log.info("Attempting stock reservation for orderId: {}, productId: {}, quantity: {}",
-                 order.id, order.productId, order.quantity);
-
-        // Simulate checking stock availability (replace with actual logic)
-        boolean stockAvailable = simulateStockCheck(order.productId, order.quantity);
         String reservationStatus = stockAvailable ? StockReservation.STATUS_RESERVED : StockReservation.STATUS_FAILED;
 
         StockReservation reservation = StockReservation.builder()

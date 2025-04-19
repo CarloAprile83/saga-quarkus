@@ -1,6 +1,8 @@
 package org.saga_quarkus.order.rest;
 
 import jakarta.inject.Inject;
+import jakarta.transaction.SystemException;
+import jakarta.transaction.TransactionManager;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
@@ -26,6 +28,7 @@ public class OrderResource {
     @POST
     @Transactional // Ensure the operation is atomic
     public Response createOrder(OrderRequest orderRequest) {
+        log.info("Received order request: {}", orderRequest); // Add this line
         if (orderRequest == null || orderRequest.productId == null || orderRequest.quantity == null || orderRequest.userId == null || orderRequest.quantity <= 0) {
             log.warn("Received invalid order request: {}", orderRequest);
             return Response.status(Response.Status.BAD_REQUEST).entity("Invalid order data provided.").build();
